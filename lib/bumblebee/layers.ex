@@ -409,16 +409,25 @@ defmodule Bumblebee.Layers do
       ])
 
     kernel_shape = fn input_shape ->
-      kernel_shape = Axon.Shape.dense_kernel(input_shape, units)
+      unless Nx.rank(input_shape) >= 2 do
+        raise ArgumentError,
+              "input shape must have at least rank 2, got rank" <>
+                " #{Nx.rank(input_shape)}"
+      end
 
-      # We expect a transposed kernel
-      kernel_shape
-      |> Tuple.to_list()
-      |> Enum.reverse()
-      |> List.to_tuple()
+      # Transposed kernel compared to Axon.dense/3.
+      {units, elem(input_shape, Nx.rank(input_shape) - 1)}
     end
 
-    bias_shape = &Axon.Shape.dense_bias(&1, units)
+    bias_shape = fn input_shape ->
+      unless Nx.rank(input_shape) >= 2 do
+        raise ArgumentError,
+              "input shape must have at least rank 2, got rank" <>
+                " #{Nx.rank(input_shape)}"
+      end
+
+      {units}
+    end
 
     kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
 
@@ -1176,10 +1185,13 @@ defmodule Bumblebee.Layers do
                 "expected :upcast to be either :all or :normalization, got: #{other}"
       end
 
-    weight =
-      Axon.param("weight", &Axon.Shape.norm_param(&1, opts[:channel_index]),
-        initializer: opts[:initializer]
-      )
+    weight_shape = fn input_shape ->
+      names = List.duplicate(nil, Nx.rank(input_shape))
+      axis = Nx.Shape.normalize_axis(input_shape, opts[:channel_index], names)
+      {elem(input_shape, axis)}
+    end
+
+    weight = Axon.param("weight", weight_shape, initializer: opts[:initializer])
 
     Axon.layer(impl, [input, weight],
       name: opts[:name],
